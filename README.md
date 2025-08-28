@@ -1,10 +1,12 @@
 # BobApp
 
+[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=a-melouk_bobapp-ci-cd)](https://sonarcloud.io/summary/new_code?id=a-melouk_bobapp-ci-cd)
+
 Clone project:
 
 > git clone XXXXX
 
-## Front-end 
+## Front-end
 
 Go inside folder the front folder:
 
@@ -22,7 +24,7 @@ Launch Front-end:
 
 Build the container:
 
-> docker build -t bobapp-front .  
+> docker build -t bobapp-front .
 
 Start the container:
 
@@ -40,7 +42,7 @@ Install dependencies:
 
 Launch Back-end:
 
->  mvn spring-boot:run
+> mvn spring-boot:run
 
 Launch the tests:
 
@@ -50,8 +52,10 @@ Launch the tests:
 
 Build the container:
 
-> docker build -t bobapp-back .  
+> docker build -t bobapp-back .
 
 Start the container:
 
-> docker run -p 8080:8080 --name bobapp-back -d bobapp-back 
+> docker run -p 8080:8080 --name bobapp-back -d bobapp-back
+
+test new job
