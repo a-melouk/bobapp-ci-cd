@@ -26,10 +26,28 @@ jobs:
           java-version: "11"
           distribution: "temurin"
 
+      # Cache Maven dependencies
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
       # Setup Node for frontend
       - uses: actions/setup-node@v3
         with:
           node-version: "16"
+
+      # Cache npm dependencies
+      - name: Cache npm
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       # Build & test backend (Spring Boot + JaCoCo)
       - name: Build & test backend
@@ -49,7 +67,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build & push Docker images
+      # Build & push Docker images (only on main branch)
       - name: Log in to Docker Hub
         if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v2
