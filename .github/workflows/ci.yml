@@ -90,17 +90,13 @@ jobs:
     needs: [detect-changes, backend-ci, frontend-ci]
     # Run this job if:
     # - The workflow is not cancelled (always())
-    # - At least one of the backend or frontend jobs succeeded, OR
-    # - Both backend and frontend jobs were skipped (no changes detected)
+    # - At least one of the backend or frontend jobs succeeded
+    # - Skip if both components were skipped (no changes to analyze)
     if: |
       always() &&
       (
         needs.backend-ci.result == 'success' ||
-        needs.frontend-ci.result == 'success' ||
-        (
-          needs.backend-ci.result == 'skipped' &&
-          needs.frontend-ci.result == 'skipped'
-        )
+        needs.frontend-ci.result == 'success'
       )
     steps:
       - uses: actions/checkout@v4
@@ -118,6 +114,26 @@ jobs:
         if: needs.detect-changes.outputs.frontend-changed == 'true'
         with:
           node-version: "18"
+
+      # Cache Maven dependencies for potential backend rebuild
+      - name: Cache Maven packages
+        if: needs.detect-changes.outputs.backend-changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      # Cache npm dependencies for potential frontend rebuild
+      - name: Cache npm
+        if: needs.detect-changes.outputs.frontend-changed == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       # Rebuild backend artifacts for SonarCloud analysis
       - name: Rebuild backend for analysis
