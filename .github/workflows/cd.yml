@@ -1,8 +1,10 @@
 name: Docker Front/back Build & Push
 
 on:
-  push:
-    branches: [main]
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    types:
+      - completed
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
@@ -22,7 +24,7 @@ jobs:
         with:
           context: ./back
           file: back/Dockerfile
-          push: false # Ne pas pousser encore
+          push: false # Do not push yet
           tags: backend:${{ github.sha }}
 
   build-frontend:
@@ -41,7 +43,7 @@ jobs:
   push-to-dockerhub:
     needs: [build-backend, build-frontend]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' # Push uniquement sur merge vers main
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' # Push only on successful CI completion on main
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -56,6 +58,9 @@ jobs:
           context: ./back
           file: back/Dockerfile
           push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/bobapp-back:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/bobapp-back:latest
 
       - name: Push frontend image
         uses: docker/build-push-action@v6.9.0
@@ -63,3 +68,6 @@ jobs:
           context: front
           file: front/Dockerfile
           push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/bobapp-front:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/bobapp-front:latest
