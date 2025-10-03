@@ -3,7 +3,7 @@ name: CI Pipeline
 on:
   # Run CI only when PRs are merged to main (triggers CD)
   push:
-    branches: ["main"]
+    branches: ["develop"]
   # Run CI on PR events for all branch validation (develop, feature/*, etc.)
   pull_request:
     types: [opened, synchronize, reopened]
