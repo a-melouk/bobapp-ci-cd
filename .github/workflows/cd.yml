@@ -1,73 +1,74 @@
 name: Docker Front/back Build & Push
 
 on:
+  # Trigger only when CI Pipeline completes on main branch
+  # This ensures Docker images are built and pushed only after successful CI validation
   workflow_run:
     workflows: ["CI Pipeline"]
+    branches: [main]
     types:
       - completed
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: cd-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-backend:
+  # Build Docker images and push to DockerHub
+  # Runs only if CI Pipeline completed successfully
+  build-and-push:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Build backend Docker image
-        uses: docker/build-push-action@v6.9.0
-        with:
-          context: ./back
-          file: back/Dockerfile
-          push: false # Do not push yet
-          tags: backend:${{ github.sha }}
+    # Only execute if the triggering CI workflow succeeded
+    if: github.event.workflow_run.conclusion == 'success'
 
-  build-frontend:
-    runs-on: ubuntu-latest
     steps:
+      # Checkout the exact commit that triggered the workflow
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Build frontend Docker image
-        uses: docker/build-push-action@v6.9.0
         with:
-          context: front
-          file: front/Dockerfile
-          push: false
-          tags: frontend:${{ github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-  push-to-dockerhub:
-    needs: [build-backend, build-frontend]
-    runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' # Push only on successful CI completion on main
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      # Set up Docker Buildx for advanced build features (caching, multi-platform builds)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Authenticate with DockerHub to push images
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - name: Push backend image
+
+      # Build and push backend Docker image
+      # Tags: commit SHA (for traceability) + latest (for easy deployment)
+      # Uses registry caching to speed up subsequent builds
+      - name: Build and push backend image
         uses: docker/build-push-action@v6.9.0
         with:
           context: ./back
           file: back/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/bobapp-back:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/bobapp-back:${{ github.event.workflow_run.head_sha }}
             ${{ secrets.DOCKER_USERNAME }}/bobapp-back:latest
+          # Cache layers from previous builds to speed up this build
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/bobapp-back:buildcache
+          # Store layers for future builds (mode=max includes all layers)
+          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/bobapp-back:buildcache,mode=max
 
-      - name: Push frontend image
+      # Build and push frontend Docker image
+      # Tags: commit SHA (for traceability) + latest (for easy deployment)
+      # Uses registry caching to speed up subsequent builds
+      - name: Build and push frontend image
         uses: docker/build-push-action@v6.9.0
         with:
-          context: front
+          context: ./front
           file: front/Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/bobapp-front:${{ github.sha }}
+            ${{ secrets.DOCKER_USERNAME }}/bobapp-front:${{ github.event.workflow_run.head_sha }}
             ${{ secrets.DOCKER_USERNAME }}/bobapp-front:latest
+          # Cache layers from previous builds to speed up this build
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/bobapp-front:buildcache
+          # Store layers for future builds (mode=max includes all layers)
+          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/bobapp-front:buildcache,mode=max

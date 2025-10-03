@@ -1,10 +1,13 @@
 name: CI Pipeline
 
 on:
-  # Run CI only when PRs are merged to main (triggers CD)
+  # Trigger on every commit pushed to main branch (after PR merge)
+  # This is the CI run that triggers CD deployment to DockerHub
   push:
-    branches: ["develop"]
-  # Run CI on PR events for all branch validation (develop, feature/*, etc.)
+    branches: ["main"]
+  # Trigger on PR events for validation before merging
+  # Runs on every commit in the PR branch (opened, new commits, reopened)
+  # This validates code quality before allowing merge
   pull_request:
     types: [opened, synchronize, reopened]
 
@@ -14,14 +17,18 @@ concurrency:
 
 jobs:
   # Detect which components changed to optimize build times
+  # Only runs jobs for components that were actually modified
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
       backend-changed: ${{ steps.changes.outputs.backend }}
       frontend-changed: ${{ steps.changes.outputs.frontend }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect file changes
+        uses: dorny/paths-filter@v2
         id: changes
         with:
           filters: |
@@ -33,16 +40,19 @@ jobs:
               - '.github/workflows/ci.yml'
 
   # Backend build and test job
+  # Runs only if backend files were changed
   backend-ci:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.backend-changed == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # required for SonarCloud PR analysis
+          fetch-depth: 0 # Full history required for SonarCloud analysis
 
-      - uses: actions/setup-java@v4
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
         with:
           java-version: "11"
           distribution: "temurin"
@@ -59,20 +69,23 @@ jobs:
         run: mvn -f back/pom.xml clean verify
 
   # Frontend build and test job
+  # Runs only if frontend files were changed
   frontend-ci:
     runs-on: ubuntu-latest
     needs: detect-changes
     if: needs.detect-changes.outputs.frontend-changed == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # required for SonarCloud PR analysis
+          fetch-depth: 0 # Full history required for SonarCloud analysis
 
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "18"
 
-      - name: Cache npm
+      - name: Cache npm packages
         uses: actions/cache@v4
         with:
           path: ~/.npm
@@ -80,20 +93,24 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      - name: Build & test frontend
+      - name: Install dependencies
         run: |
           cd front
           npm ci
+
+      - name: Build & test frontend
+        run: |
+          cd front
           npm test -- --watch=false --code-coverage
 
-  # SonarCloud analysis (runs after successful component builds)
+  # SonarCloud code quality analysis
+  # Runs after initial build validation to analyze code quality
+  # Rebuilds components with cached dependencies for accurate analysis
   sonarcloud-analysis:
     runs-on: ubuntu-latest
     needs: [detect-changes, backend-ci, frontend-ci]
-    # Run this job if:
-    # - The workflow is not cancelled (always())
-    # - At least one of the backend or frontend jobs succeeded
-    # - Skip if both components were skipped (no changes to analyze)
+    # Run if at least one component was built successfully
+    # always() ensures this runs even if one job was skipped
     if: |
       always() &&
       (
@@ -101,23 +118,19 @@ jobs:
         needs.frontend-ci.result == 'success'
       )
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # required for SonarCloud PR analysis
+          fetch-depth: 0 # Full history required for accurate analysis
 
-      # Setup environments for rebuilding artifacts
-      - uses: actions/setup-java@v4
+      # Setup and rebuild backend for SonarCloud analysis
+      - name: Set up JDK 11
         if: needs.detect-changes.outputs.backend-changed == 'true'
+        uses: actions/setup-java@v4
         with:
           java-version: "11"
           distribution: "temurin"
 
-      - uses: actions/setup-node@v4
-        if: needs.detect-changes.outputs.frontend-changed == 'true'
-        with:
-          node-version: "18"
-
-      # Cache Maven dependencies for potential backend rebuild
       - name: Cache Maven packages
         if: needs.detect-changes.outputs.backend-changed == 'true'
         uses: actions/cache@v4
@@ -127,8 +140,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-maven-
 
-      # Cache npm dependencies for potential frontend rebuild
-      - name: Cache npm
+      - name: Build backend with coverage for SonarCloud
+        if: needs.detect-changes.outputs.backend-changed == 'true'
+        run: mvn -f back/pom.xml clean verify
+
+      # Setup and rebuild frontend for SonarCloud analysis
+      - name: Set up Node.js
+        if: needs.detect-changes.outputs.frontend-changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Cache npm packages
         if: needs.detect-changes.outputs.frontend-changed == 'true'
         uses: actions/cache@v4
         with:
@@ -137,19 +160,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-      # Rebuild backend artifacts for SonarCloud analysis
-      - name: Rebuild backend for analysis
-        if: needs.detect-changes.outputs.backend-changed == 'true'
-        run: mvn -f back/pom.xml clean verify
-
-      # Rebuild frontend artifacts for SonarCloud analysis
-      - name: Rebuild frontend for analysis
+      - name: Build frontend with coverage for SonarCloud
         if: needs.detect-changes.outputs.frontend-changed == 'true'
         run: |
           cd front
           npm ci
           npm test -- --watch=false --code-coverage
 
+      # Analyze code quality and coverage with SonarCloud
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v6
         env:
