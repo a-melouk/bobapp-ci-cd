@@ -68,7 +68,7 @@ jobs:
       - name: Build & test backend
         run: mvn -f back/pom.xml clean verify
 
-      # Upload coverage artifacts to avoid rebuilding in SonarCloud job
+      # Upload coverage artifacts and compiled classes for SonarCloud analysis
       # Artifacts are stored for 1 day and automatically cleaned up
       - name: Upload backend coverage artifacts
         uses: actions/upload-artifact@v4
@@ -76,6 +76,7 @@ jobs:
           name: backend-coverage
           path: |
             back/target/jacoco.exec
+            back/target/classes/
             back/target/site/jacoco/
           retention-days: 1
 
@@ -114,13 +115,15 @@ jobs:
           cd front
           npm test -- --watch=false --code-coverage
 
-      # Upload coverage artifacts to avoid rebuilding in SonarCloud job
+      # Upload coverage artifacts and build output for SonarCloud analysis
       # Artifacts are stored for 1 day and automatically cleaned up
       - name: Upload frontend coverage artifacts
         uses: actions/upload-artifact@v4
         with:
           name: frontend-coverage
-          path: front/coverage/
+          path: |
+            front/coverage/
+            front/dist/
           retention-days: 1
 
   # SonarCloud code quality analysis
